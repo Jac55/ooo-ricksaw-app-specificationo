@@ -3,8 +3,8 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Ooo Rickshaw — Nawabshah ka apna ride app',
-  description: 'Reliable local rides across Nawabshah. Har sawari khaas hoti hai.',
+  title: 'Ooo Rickshaw — Your ride, wherever you go',
+  description: 'Reliable rides for every journey, anywhere in the world. Har sawari khaas hoti hai.',
   generator: 'v0.app',
   icons: {
     icon: [
