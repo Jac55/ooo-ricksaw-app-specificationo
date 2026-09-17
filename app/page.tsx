@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Bike, CarFront, Check, ChevronDown, Clock3, Crosshair, LocateFixed, MapPin, Menu, Navigation, ShieldCheck, Star, UserRound, WalletCards, X } from 'lucide-react'
 
@@ -14,7 +14,7 @@ const rides = [
 type Ride = { id: string; status: string; pickup_text: string; dropoff_text: string; ride_type: string; fare_pkr: number; eta_minutes: number; captain_id: string | null }
 
 export default function Page() {
-  const getSupabase = () => createClient()
+  const supabase = useMemo(() => createClient(), [])
   const [user, setUser] = useState<any>(null)
   const [pickup, setPickup] = useState('My current location')
   const [dropoff, setDropoff] = useState('')
@@ -32,14 +32,14 @@ export default function Page() {
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    getSupabase().auth.getUser().then(({ data }) => setUser(data.user))
-    const { data: listener } = getSupabase().auth.onAuthStateChange((_event, session) => setUser(session?.user ?? null))
+    supabase.auth.getUser().then(({ data }) => setUser(data.user))
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => setUser(session?.user ?? null))
     return () => listener.subscription.unsubscribe()
   }, [])
 
   useEffect(() => {
     if (!user) return
-    getSupabase().from('rides').select('id,status,pickup_text,dropoff_text,ride_type,fare_pkr,eta_minutes,captain_id').eq('rider_id', user.id).in('status', ['searching', 'accepted', 'arriving', 'in_progress']).order('created_at', { ascending: false }).limit(1).maybeSingle().then(({ data }) => setActiveRide(data))
+    supabase.from('rides').select('id,status,pickup_text,dropoff_text,ride_type,fare_pkr,eta_minutes,captain_id').eq('rider_id', user.id).in('status', ['searching', 'accepted', 'arriving', 'in_progress']).order('created_at', { ascending: false }).limit(1).maybeSingle().then(({ data }) => setActiveRide(data))
     const channel = supabase.channel(`rider-${user.id}`).on('postgres_changes', { event: '*', schema: 'public', table: 'rides', filter: `rider_id=eq.${user.id}` }, (payload) => setActiveRide(payload.eventType === 'DELETE' || (payload.new as Ride).status === 'completed' || (payload.new as Ride).status === 'cancelled' ? null : payload.new as Ride)).subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [user])
@@ -49,8 +49,8 @@ export default function Page() {
   async function submitAuth(event: React.FormEvent) {
     event.preventDefault(); setBusy(true); setAuthMessage('')
     const result = authMode === 'signup'
-      ? await getSupabase().auth.signUp({ email, password, options: { emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? `${window.location.origin}/auth/callback`, data: { full_name: fullName, role: 'rider' } } })
-      : await getSupabase().auth.signInWithPassword({ email, password })
+      ? await supabase.auth.signUp({ email, password, options: { emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? `${window.location.origin}/auth/callback`, data: { full_name: fullName, role: 'rider' } } })
+      : await supabase.auth.signInWithPassword({ email, password })
     if (result.error) setAuthMessage(result.error.message.includes('confirm') ? 'Check your email to confirm your account.' : 'Invalid email or password.')
     else { setAuthMessage(authMode === 'signup' ? 'Check your email to confirm your account.' : 'Welcome back.'); if (authMode === 'login') setAuthOpen(false) }
     setBusy(false)
@@ -60,18 +60,18 @@ export default function Page() {
     if (!dropoff) return
     if (!user) { setAuthOpen(true); return }
     setBusy(true)
-    const { data, error } = await getSupabase().from('rides').insert({ rider_id: user.id, pickup_text: pickup.trim() || 'My current location', dropoff_text: dropoff.trim(), ride_type: selectedRide, fare_pkr: fare, distance_km: 4.8, eta_minutes: 14, payment_method: 'cash' }).select('id,status,pickup_text,dropoff_text,ride_type,fare_pkr,eta_minutes,captain_id').single()
+    const { data, error } = await supabase.from('rides').insert({ rider_id: user.id, pickup_text: pickup.trim() || 'My current location', dropoff_text: dropoff.trim(), ride_type: selectedRide, fare_pkr: fare, distance_km: 4.8, eta_minutes: 14, payment_method: 'cash' }).select('id,status,pickup_text,dropoff_text,ride_type,fare_pkr,eta_minutes,captain_id').single()
     if (!error) setActiveRide(data)
     setBusy(false)
   }
 
   async function cancelRide() {
     if (!activeRide) return
-    await getSupabase().from('rides').update({ status: 'cancelled', cancellation_reason: 'Cancelled by rider' }).eq('id', activeRide.id).eq('rider_id', user.id)
+    await supabase.from('rides').update({ status: 'cancelled', cancellation_reason: 'Cancelled by rider' }).eq('id', activeRide.id).eq('rider_id', user.id)
     setActiveRide(null)
   }
 
-  async function signOut() { await getSupabase().auth.signOut(); setUser(null); setCaptainOpen(false) }
+  async function signOut() { await supabase.auth.signOut(); setUser(null); setCaptainOpen(false) }
 
   return <main className="min-h-screen bg-[#0b0c0f] text-[#f7f3ea] selection:bg-[#d7aa45]/30">
     <header className="relative z-30 flex h-20 items-center justify-between border-b border-white/[0.07] bg-[#0b0c0f]/90 px-5 backdrop-blur-xl sm:px-8 lg:px-12">
