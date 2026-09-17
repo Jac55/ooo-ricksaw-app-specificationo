@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Bike, CarFront, Check, ChevronDown, Clock3, Crosshair, LocateFixed, MapPin, Menu, Navigation, ShieldCheck, Star, UserRound, WalletCards, X } from 'lucide-react'
 
+const OWNER_EMAIL = 'jaltabirzu@necub.com'
 const places = ['Central Station', 'City Center', 'Airport Terminal', 'University District', 'Main Market', 'Residential Area']
 const rides = [
   { name: 'Rickshaw', meta: '4 min away', price: 180, icon: CarFront },
@@ -14,7 +15,7 @@ const rides = [
 type Ride = { id: string; status: string; pickup_text: string; dropoff_text: string; ride_type: string; fare_pkr: number; eta_minutes: number; captain_id: string | null }
 
 export default function Page() {
-  const supabase = useMemo(() => createClient(), [])
+  const supabase = useMemo<any>(() => typeof window === 'undefined' ? null : createClient(), [])
   const [user, setUser] = useState<any>(null)
   const [pickup, setPickup] = useState('My current location')
   const [dropoff, setDropoff] = useState('')
@@ -33,8 +34,27 @@ export default function Page() {
   const [locationState, setLocationState] = useState<'idle' | 'locating' | 'ready' | 'denied'>('idle')
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null)
   const [captainProgress, setCaptainProgress] = useState(0)
+  const [adminOpen, setAdminOpen] = useState(false)
+  const [adminRides, setAdminRides] = useState<Ride[]>([])
+  const [adminLoading, setAdminLoading] = useState(false)
+  const isOwner = user?.email?.toLowerCase() === OWNER_EMAIL
+
+  async function openAdmin() {
+    if (!isOwner || !supabase) return
+    setAdminOpen(true)
+    setAdminLoading(true)
+    const { data } = await supabase.from('rides').select('id,status,pickup_text,dropoff_text,ride_type,fare_pkr,eta_minutes,captain_id').order('created_at', { ascending: false }).limit(30)
+    setAdminRides((data as Ride[] | null) ?? [])
+    setAdminLoading(false)
+  }
+
+  async function updateRideStatus(id: string, status: string) {
+    await supabase.from('rides').update({ status }).eq('id', id)
+    setAdminRides((rides) => rides.map((ride) => ride.id === id ? { ...ride, status } : ride))
+  }
 
   useEffect(() => {
+    if (!supabase) return
     supabase.auth.getUser().then(({ data }: { data: { user: any } }) => setUser(data.user))
     const { data: listener } = supabase.auth.onAuthStateChange((_event: string, session: { user: any } | null) => setUser(session?.user ?? null))
     return () => listener.subscription.unsubscribe()
@@ -48,7 +68,7 @@ export default function Page() {
   }, [activeRide?.id, activeRide?.status])
 
   useEffect(() => {
-    if (!user) return
+    if (!user || !supabase) return
     supabase.from('rides').select('id,status,pickup_text,dropoff_text,ride_type,fare_pkr,eta_minutes,captain_id').eq('rider_id', user.id).in('status', ['searching', 'accepted', 'arriving', 'in_progress']).order('created_at', { ascending: false }).limit(1).maybeSingle().then(({ data }: { data: Ride | null }) => setActiveRide(data))
     const channel = supabase.channel(`rider-${user.id}`).on('postgres_changes', { event: '*', schema: 'public', table: 'rides', filter: `rider_id=eq.${user.id}` }, (payload: any) => setActiveRide(payload.eventType === 'DELETE' || (payload.new as Ride).status === 'completed' || (payload.new as Ride).status === 'cancelled' ? null : payload.new as Ride)).subscribe()
     return () => { supabase.removeChannel(channel) }
@@ -57,7 +77,7 @@ export default function Page() {
   const fare = rides.find((ride) => ride.name === selectedRide)?.price ?? 180
 
   async function submitAuth(event: React.FormEvent) {
-    event.preventDefault(); setBusy(true); setAuthMessage('')
+    event.preventDefault(); if (!supabase) return; setBusy(true); setAuthMessage('')
     const result = authMode === 'signup'
       ? await supabase.auth.signUp({ email, password, options: { emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? `${window.location.origin}/auth/callback`, data: { full_name: fullName, role: 'rider' } } })
       : await supabase.auth.signInWithPassword({ email, password })
@@ -68,7 +88,7 @@ export default function Page() {
 
   async function requestRide() {
     if (!dropoff) return
-    if (!user) { setAuthOpen(true); return }
+    if (!user || !supabase) { setAuthOpen(true); return }
     setBusy(true)
     const { data, error } = await supabase.from('rides').insert({ rider_id: user.id, pickup_text: pickup.trim() || 'My current location', dropoff_text: dropoff.trim(), ride_type: selectedRide, fare_pkr: fare, distance_km: 4.8, eta_minutes: 14, payment_method: 'cash' }).select('id,status,pickup_text,dropoff_text,ride_type,fare_pkr,eta_minutes,captain_id').single()
     if (!error) setActiveRide(data)
@@ -76,17 +96,17 @@ export default function Page() {
   }
 
   async function cancelRide() {
-    if (!activeRide) return
+    if (!activeRide || !supabase || !user) return
     await supabase.from('rides').update({ status: 'cancelled', cancellation_reason: 'Cancelled by rider' }).eq('id', activeRide.id).eq('rider_id', user.id)
     setActiveRide(null)
   }
 
-  async function signOut() { await supabase.auth.signOut(); setUser(null); setCaptainOpen(false) }
+  async function signOut() { if (supabase) await supabase.auth.signOut(); setUser(null); setCaptainOpen(false) }
 
   return <main className="min-h-screen bg-[#0b0c0f] text-[#f7f3ea] selection:bg-[#d7aa45]/30">
     <header className="relative z-30 flex min-h-20 items-center justify-between gap-3 border-b border-white/[0.07] bg-[#0b0c0f]/90 px-4 py-3 backdrop-blur-xl sm:px-8 lg:px-12">
       <div className="flex min-w-0 items-center gap-2 sm:gap-3"><button aria-label="Open menu" className="rounded-full p-1.5 text-white/55 lg:hidden"><Menu /></button><div className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-[#d6a943]/45 bg-[#d6a943]/10 text-[#e4bd65] sm:size-10"><Navigation className="size-4 fill-current sm:size-5" /></div><div className="min-w-0"><div className="truncate font-serif text-[21px] font-bold tracking-tight text-[#f0c967] sm:text-2xl">Ooo <span className="text-white">Rickshaw</span></div><div className="-mt-1 truncate text-[8px] uppercase tracking-[.16em] text-white/40 sm:text-[9px] sm:tracking-[.25em]">Har sawari khaas hoti hai</div></div></div>
-      <nav className="hidden items-center gap-8 text-sm text-white/55 lg:flex"><a className="text-[#e5be67]" href="#book">Book a ride</a><a href="#rides">My rides</a><button onClick={() => setCaptainOpen(true)}>Become a captain</button></nav>
+      <nav className="hidden items-center gap-8 text-sm text-white/55 lg:flex"><a className="text-[#e5be67]" href="#book">Book a ride</a><a href="#rides">My rides</a><button onClick={() => setCaptainOpen(true)}>Become a captain</button>{isOwner && <button onClick={openAdmin} className="text-[#e5be67]">Owner dashboard</button>}</nav>
       <div className="flex shrink-0 items-center gap-3">{user ? <button onClick={signOut} className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] py-2 pl-2 pr-2.5 text-xs sm:gap-2 sm:pr-3 sm:text-sm"><span className="flex size-7 items-center justify-center rounded-full bg-[#d5a844]/20 text-[#e5bf69]"><UserRound className="size-4" /></span><span className="hidden sm:inline">Account</span><ChevronDown className="size-3.5 text-white/40" /></button> : <button onClick={() => setAuthOpen(true)} className="rounded-full bg-[#d8ad50] px-3 py-2 text-xs font-semibold text-[#17130a] sm:px-4 sm:text-sm">Sign in</button>}</div>
     </header>
 
@@ -102,6 +122,7 @@ export default function Page() {
 
     {activeRide && <div className="fixed bottom-5 left-1/2 z-40 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-2xl border border-[#d5aa51]/30 bg-[#191916]/95 p-4 shadow-2xl backdrop-blur-xl"><div className="flex items-start gap-3"><div className="flex size-10 items-center justify-center rounded-full bg-[#d5aa51]/15 text-[#e5bd65]"><Clock3 className="size-5 animate-pulse" /></div><div className="flex-1"><p className="text-sm font-medium">{activeRide.status === 'searching' ? 'Finding your captain' : 'Captain assigned'}</p><p className="mt-1 text-xs text-white/45">{activeRide.dropoff_text} · Cash · Rs. {activeRide.fare_pkr}</p></div><button onClick={cancelRide} className="text-xs text-white/45 hover:text-white">Cancel</button></div></div>}
     {authOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-5 backdrop-blur-sm"><form onSubmit={submitAuth} className="w-full max-w-md rounded-3xl border border-[#d5aa51]/30 bg-[#17181c] p-6 shadow-2xl"><div className="flex justify-between"><div><p className="text-[10px] uppercase tracking-[.2em] text-[#e5bd65]">Ooo Rickshaw account</p><h2 className="mt-2 font-serif text-3xl text-white">{authMode === 'login' ? 'Welcome back.' : 'Join Ooo Rickshaw.'}</h2></div><button type="button" onClick={() => setAuthOpen(false)}><X className="size-4 text-white/45" /></button></div>{authMode === 'signup' && <input required value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full name" className="mt-6 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none" />}<input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email address" className="mt-3 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none" /><input required minLength={6} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password (6+ characters)" className="mt-3 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none" />{authMessage && <p className="mt-3 text-sm text-[#e5bd65]">{authMessage}</p>}<button disabled={busy} className="mt-5 w-full rounded-xl bg-[#d8ad50] py-3 font-semibold text-[#17130a]">{busy ? 'Please wait...' : authMode === 'login' ? 'Sign in' : 'Create account'}</button><button type="button" onClick={() => { setAuthMode(authMode === 'login' ? 'signup' : 'login'); setAuthMessage('') }} className="mt-4 w-full text-sm text-white/45 hover:text-white">{authMode === 'login' ? 'New to Ooo Rickshaw? Create an account' : 'Already have an account? Sign in'}</button></form></div>}
+    {adminOpen && <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 p-4 backdrop-blur-sm sm:p-8"><section className="mx-auto max-w-5xl rounded-3xl border border-[#d5aa51]/30 bg-[#121318] p-5 shadow-2xl sm:p-8"><div className="flex items-start justify-between gap-4"><div><p className="text-[10px] uppercase tracking-[.2em] text-[#e5bd65]">Owner console</p><h2 className="mt-2 font-serif text-3xl text-white sm:text-4xl">Global operations</h2><p className="mt-2 text-sm text-white/45">Monitor rides and keep every city moving.</p></div><button aria-label="Close owner dashboard" onClick={() => setAdminOpen(false)}><X className="size-5 text-white/45" /></button></div><div className="mt-7 grid grid-cols-2 gap-3 sm:grid-cols-4"><div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"><p className="text-xs text-white/40">Total rides</p><p className="mt-2 text-2xl text-white">{adminRides.length}</p></div><div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"><p className="text-xs text-white/40">Searching</p><p className="mt-2 text-2xl text-[#e5bd65]">{adminRides.filter((ride) => ride.status === 'searching').length}</p></div><div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"><p className="text-xs text-white/40">Active</p><p className="mt-2 text-2xl text-[#83b77e]">{adminRides.filter((ride) => ['accepted','arriving','in_progress'].includes(ride.status)).length}</p></div><div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"><p className="text-xs text-white/40">Cash value</p><p className="mt-2 text-2xl text-white">Rs. {adminRides.reduce((total, ride) => total + ride.fare_pkr, 0)}</p></div></div><div className="mt-7 overflow-hidden rounded-2xl border border-white/10"><div className="border-b border-white/10 px-4 py-3 text-sm text-white/70">Live ride dispatch</div>{adminLoading ? <p className="p-5 text-sm text-white/40">Loading operations...</p> : adminRides.length === 0 ? <p className="p-5 text-sm text-white/40">No rides have been requested yet.</p> : <div className="divide-y divide-white/[0.07]">{adminRides.map((ride) => <div key={ride.id} className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="truncate text-sm text-white">{ride.pickup_text} <span className="text-white/30">to</span> {ride.dropoff_text}</p><p className="mt-1 text-xs text-white/40">{ride.ride_type} · Cash · Rs. {ride.fare_pkr}</p></div><div className="flex items-center gap-2"><span className="rounded-full bg-white/[0.08] px-3 py-1.5 text-[10px] uppercase tracking-wider text-white/55">{ride.status.replace('_', ' ')}</span>{ride.status === 'searching' && <button onClick={() => updateRideStatus(ride.id, 'accepted')} className="rounded-full bg-[#d8ad50] px-3 py-1.5 text-[10px] font-semibold text-[#17130a]">Assign</button>}{ride.status === 'accepted' && <button onClick={() => updateRideStatus(ride.id, 'arriving')} className="rounded-full border border-white/10 px-3 py-1.5 text-[10px] text-white/70">Mark arriving</button>}{ride.status === 'arriving' && <button onClick={() => updateRideStatus(ride.id, 'in_progress')} className="rounded-full border border-white/10 px-3 py-1.5 text-[10px] text-white/70">Start ride</button>}{ride.status === 'in_progress' && <button onClick={() => updateRideStatus(ride.id, 'completed')} className="rounded-full border border-[#83b77e]/40 px-3 py-1.5 text-[10px] text-[#a9d2a5]">Complete</button>}</div></div>)}</div>}</div></section></div>}
     {captainOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-5 backdrop-blur-sm"><div className="w-full max-w-md rounded-3xl border border-[#d5aa51]/30 bg-[#17181c] p-6 shadow-2xl"><div className="flex justify-between"><div><p className="text-[10px] uppercase tracking-[.2em] text-[#e5bd65]">Captain mode</p><h2 className="mt-2 font-serif text-3xl">Ready to earn?</h2></div><button onClick={() => setCaptainOpen(false)}><X className="size-4 text-white/45" /></button></div><p className="mt-3 text-sm leading-6 text-white/50">Go online to receive nearby ride requests wherever you operate.</p><div className="mt-6 flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] p-4"><div><div className="text-sm text-white/80">Available for rides</div><div className="mt-1 text-xs text-white/40">{online ? 'You are visible to riders' : 'You are currently offline'}</div></div><button onClick={() => setOnline(!online)} className={`rounded-full px-4 py-2 text-xs font-semibold ${online ? 'bg-[#83b77e] text-[#102012]' : 'bg-[#d8ad50] text-[#17130a]'}`}>{online ? 'Go offline' : 'Go online'}</button></div><button onClick={() => { setCaptainOpen(false); if (!user) setAuthOpen(true) }} className="mt-4 w-full rounded-2xl border border-white/10 py-3 text-sm text-white/70">Open captain dashboard</button></div></div>}
   </main>
 }
