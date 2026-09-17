@@ -157,7 +157,31 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    background: #0b0c0f;
+  }
   body {
     @apply bg-background text-foreground;
+    margin: 0;
   }
+}
+
+.map-grid {
+  background-image:
+    linear-gradient(rgba(214, 171, 79, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(214, 171, 79, 0.06) 1px, transparent 1px);
+  background-size: 74px 74px;
+  mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
+}
+
+::selection {
+  background: rgba(216, 173, 80, 0.35);
+}
+
+button, a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+input::placeholder {
+  color: rgba(255, 255, 255, 0.32);
 }

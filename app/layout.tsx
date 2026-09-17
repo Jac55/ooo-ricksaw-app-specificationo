@@ -3,8 +3,8 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
+  title: 'CHALO! — Nawabshah ka apna ride app',
+  description: 'Reliable local rides across Nawabshah. Har sawari khaas hoti hai.',
   generator: 'v0.app',
   icons: {
     icon: [
@@ -26,11 +26,9 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  colorScheme: 'light dark',
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: 'white' },
-    { media: '(prefers-color-scheme: dark)', color: 'black' },
-  ],
+  colorScheme: 'dark',
+  themeColor: '#0b0c0f',
+  userScalable: false,
 }
 
 export default function RootLayout({
