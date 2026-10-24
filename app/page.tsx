@@ -90,13 +90,76 @@ export default function Page() {
   const fare = rides.find((ride) => ride.name === selectedRide)?.price ?? 180
 
   async function submitAuth(event: React.FormEvent) {
-    event.preventDefault(); if (!supabase) return; setBusy(true); setAuthMessage('')
-    const result = authMode === 'signup'
-      ? await supabase.auth.signUp({ email, password, options: { emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? `${window.location.origin}/auth/callback`, data: { full_name: fullName, role: accountRole } } })
-      : await supabase.auth.signInWithPassword({ email, password })
-    if (result.error) setAuthMessage(result.error.message.includes('confirm') ? 'Check your email to confirm your account.' : 'Invalid email or password.')
-    else { setAuthMessage(authMode === 'signup' ? 'Check your email to confirm your account.' : 'Welcome back.'); if (authMode === 'login') setAuthOpen(false) }
-    setBusy(false)
+    event.preventDefault()
+    if (!supabase || busy) return
+
+    const normalizedEmail = email.trim().toLowerCase()
+    const normalizedName = fullName.trim()
+    setBusy(true)
+    setAuthMessage('')
+
+    try {
+      if (authMode === 'signup') {
+        if (normalizedName.length < 2) {
+          setAuthMessage('Please enter your full name.')
+          return
+        }
+        if (password.length < 6) {
+          setAuthMessage('Your password must be at least 6 characters.')
+          return
+        }
+
+        const { data, error } = await supabase.auth.signUp({
+          email: normalizedEmail,
+          password,
+          options: {
+            emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? `${window.location.origin}/auth/callback`,
+            data: { full_name: normalizedName, role: accountRole },
+          },
+        })
+
+        if (error) {
+          const message = error.message.toLowerCase()
+          if (message.includes('already registered') || message.includes('already exists')) {
+            setAuthMessage('An account with this email already exists. Try signing in.')
+          } else if (message.includes('rate limit') || message.includes('too many')) {
+            setAuthMessage('Too many attempts. Please wait a moment and try again.')
+          } else if (message.includes('invalid') || message.includes('email')) {
+            setAuthMessage('Please enter a valid email address.')
+          } else {
+            setAuthMessage('We could not create your account. Please try again.')
+          }
+          return
+        }
+
+        setEmail(normalizedEmail)
+        setPassword('')
+        setAuthMessage(data.session ? 'Account created. You are signed in.' : 'Account created. Check your email to confirm it, then sign in.')
+        if (data.session) setAuthOpen(false)
+        return
+      }
+
+      const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password })
+      if (error) {
+        const message = error.message.toLowerCase()
+        if (message.includes('email not confirmed')) {
+          setAuthMessage('Please confirm your email before signing in.')
+        } else if (message.includes('rate limit') || message.includes('too many')) {
+          setAuthMessage('Too many attempts. Please wait a moment and try again.')
+        } else {
+          setAuthMessage('Invalid email or password.')
+        }
+        return
+      }
+
+      setUser(data.user)
+      setAuthMessage('Welcome back.')
+      setAuthOpen(false)
+    } catch {
+      setAuthMessage('Connection problem. Check your internet and try again.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function requestRide() {
