@@ -128,6 +128,8 @@ export default function Page() {
             setAuthMessage('Email confirmation is not configured for this preview. Try again without changing the email, or contact the app owner.')
           } else if (message.includes('password') || message.includes('weak')) {
             setAuthMessage('Choose a stronger password with at least 6 characters.')
+          } else if (message.includes('database error') || message.includes('saving new user') || message.includes('trigger')) {
+            setAuthMessage('The signup service is temporarily misconfigured. Please try signing in if this email already exists, or contact the owner.')
           } else if (message.includes('not authorized') || message.includes('email_address_invalid')) {
             setAuthMessage('This email address cannot receive confirmation emails in the current Supabase setup.')
           } else if (message.includes('invalid') || message.includes('email')) {
