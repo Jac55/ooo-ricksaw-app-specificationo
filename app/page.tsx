@@ -124,10 +124,16 @@ export default function Page() {
             setAuthMessage('An account with this email already exists. Try signing in.')
           } else if (message.includes('rate limit') || message.includes('too many')) {
             setAuthMessage('Too many attempts. Please wait a moment and try again.')
+          } else if (message.includes('redirect') || message.includes('url')) {
+            setAuthMessage('Email confirmation is not configured for this preview. Try again without changing the email, or contact the app owner.')
+          } else if (message.includes('password') || message.includes('weak')) {
+            setAuthMessage('Choose a stronger password with at least 6 characters.')
+          } else if (message.includes('not authorized') || message.includes('email_address_invalid')) {
+            setAuthMessage('This email address cannot receive confirmation emails in the current Supabase setup.')
           } else if (message.includes('invalid') || message.includes('email')) {
             setAuthMessage('Please enter a valid email address.')
           } else {
-            setAuthMessage('We could not create your account. Please try again.')
+            setAuthMessage('We could not create your account. Please check your details and try again.')
           }
           return
         }
